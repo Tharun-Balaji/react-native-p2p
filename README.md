@@ -1,31 +1,39 @@
 # React Native P2P WebRTC Starter
 
-This project is a minimal React Native (Expo) app that connects two devices with WebRTC and opens a data channel for peer-to-peer messaging.
+This project is a React Native (Expo) app that lets two devices on the same network:
 
-It uses manual signaling (copy/paste JSON offer/answer), so no custom signaling backend is needed for this demo.
+1. Talk over a WebRTC audio track.
+2. Chat over a WebRTC data channel.
+3. Share files over the same data channel (chunked base64 transfer).
 
-## Is "no server" possible?
+Signaling is manual in this prototype (copy/paste JSON offer/answer).
 
-Yes and no:
+## What this demo is for
 
-1. **No signaling server**: possible (this demo does it manually).
-2. **No relay/STUN/TURN at all**: only works in limited network conditions (often same LAN).
-3. **Reliable internet-wide P2P calls** usually need STUN and sometimes TURN.
+1. Hobby/testing on same Wi-Fi.
+2. Learning WebRTC basics without running backend signaling code.
 
-So for production chat/call apps, you usually keep:
+## Current architecture
 
-1. A signaling service (small server, Firebase, etc.) to exchange SDP/ICE.
-2. TURN fallback for users behind strict NAT/firewall.
+1. `RTCPeerConnection` with STUN (`stun:stun.l.google.com:19302`).
+2. Audio-only `getUserMedia` track for voice.
+3. Data channel protocol messages:
+   1. `chat`
+   2. `file-meta`
+   3. `file-chunk`
+   4. `file-end`
+4. Received files are written to app storage using `expo-file-system`.
 
-## Tech
+## Dependencies
 
-1. Expo SDK 54
-2. `react-native-webrtc`
-3. Manual SDP exchange in UI
+1. `react-native-webrtc`
+2. `react-native-safe-area-context`
+3. `expo-document-picker`
+4. `expo-file-system`
 
 ## Run
 
-Because `react-native-webrtc` is a native module, use a dev build (not plain Expo Go):
+`react-native-webrtc` is native, so use a dev build (not plain Expo Go):
 
 ```bash
 pnpm install
@@ -35,37 +43,33 @@ npx expo run:android
 npx expo run:ios
 ```
 
-If `pnpm` is not installed:
-
-```bash
-npm install -g pnpm
-```
-
-## How to test two apps
+## Two-device test flow
 
 On Device A:
 
-1. Tap `Create Offer`.
-2. Copy `Local Payload`.
-3. Send it to Device B (WhatsApp/Notes/etc.).
+1. Tap `1) Create Offer`.
+2. Copy `Local Payload` and send to Device B.
 
 On Device B:
 
-1. Paste offer into `Remote Payload`.
-2. Tap `Create Answer`.
-3. Copy B's `Local Payload`.
-4. Send answer back to Device A.
+1. Paste into `Remote Payload`.
+2. Tap `2) Create Answer`.
+3. Copy `Local Payload` and send back to Device A.
 
 Back on Device A:
 
 1. Paste answer into `Remote Payload`.
-2. Tap `Apply Answer`.
-3. Wait for `Connected` status.
+2. Tap `3) Apply Answer`.
+3. Wait for status `Connected`.
 
-Then both devices can send messages over the WebRTC data channel.
+After connection:
 
-## Next step ideas
+1. Talk immediately (mic permission prompt appears when peer is created).
+2. Send chat messages with `Send`.
+3. Send files with `Pick and Send File`.
 
-1. Replace manual payload copy/paste with WebSocket signaling.
-2. Add audio/video tracks with `getUserMedia`.
-3. Add TURN credentials for NAT-restricted users.
+## Notes and limits
+
+1. This is intentionally simple and not production-hardened.
+2. File transfer uses base64 and in-memory chunking, so keep files small while testing.
+3. Manual signaling is fine for a demo; replace with WebSocket/Firebase for convenience.
