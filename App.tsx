@@ -1,7 +1,11 @@
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Button,
+  PermissionsAndroid,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,13 +13,23 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  RTCPeerConnection,
-} from "react-native-webrtc";
+import { RTCPeerConnection, mediaDevices } from "react-native-webrtc";
 
 const rtcConfig = {
   // Public STUN helps peers discover reachable network addresses.
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+};
+
+const FILE_CHUNK_SIZE = 16 * 1024;
+const MAX_BUFFERED_AMOUNT = 1_000_000;
+
+type IncomingFileState = {
+  name: string;
+  mimeType: string;
+  size: number;
+  totalChunks: number;
+  chunks: string[];
+  receivedChunks: number;
 };
 
 function waitForIceGatheringComplete(pc: any): Promise<void> {
@@ -33,10 +47,18 @@ function waitForIceGatheringComplete(pc: any): Promise<void> {
   });
 }
 
+async function waitForDataChannelDrain(channel: any): Promise<void> {
+  while (channel.bufferedAmount > MAX_BUFFERED_AMOUNT) {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
+}
+
 export default function App() {
-  // Refs hold the active WebRTC objects across renders.
+  // Refs hold active WebRTC and media objects across renders.
   const pcRef = useRef<any>(null);
   const channelRef = useRef<any>(null);
+  const localStreamRef = useRef<any>(null);
+  const incomingFilesRef = useRef<Record<string, IncomingFileState>>({});
 
   // Signaling payloads and chat UI state.
   const [remotePayload, setRemotePayload] = useState("");
@@ -44,9 +66,150 @@ export default function App() {
   const [outgoingMessage, setOutgoingMessage] = useState("");
   const [chatLog, setChatLog] = useState<string[]>([]);
   const [status, setStatus] = useState("Idle");
+  const [audioStatus, setAudioStatus] = useState("Mic not started");
 
   const appendLog = useCallback((line: string) => {
     setChatLog((current) => [...current, line]);
+  }, []);
+
+  const saveIncomingFile = useCallback(
+    async (fileId: string) => {
+      const fileState = incomingFilesRef.current[fileId];
+      if (!fileState) return;
+
+      if (fileState.receivedChunks !== fileState.totalChunks) {
+        setStatus(
+          `File incomplete (${fileState.receivedChunks}/${fileState.totalChunks} chunks).`,
+        );
+        return;
+      }
+
+      const basePath = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
+      if (!basePath) {
+        setStatus("No writable app directory available.");
+        return;
+      }
+
+      const safeName = fileState.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const outputUri = `${basePath}${Date.now()}-${safeName}`;
+      const combinedBase64 = fileState.chunks.join("");
+
+      await FileSystem.writeAsStringAsync(outputUri, combinedBase64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      appendLog(`Peer file saved: ${safeName}`);
+      appendLog(`Saved at: ${outputUri}`);
+      setStatus(`Received file: ${safeName}`);
+      delete incomingFilesRef.current[fileId];
+    },
+    [appendLog],
+  );
+
+  const handleChannelMessage = useCallback(
+    async (rawPayload: string) => {
+      let parsed: any;
+      try {
+        parsed = JSON.parse(rawPayload);
+      } catch {
+        // Backward compatibility: plain text is treated as chat.
+        appendLog(`Peer: ${rawPayload}`);
+        return;
+      }
+
+      if (parsed?.type === "chat" && typeof parsed.text === "string") {
+        appendLog(`Peer: ${parsed.text}`);
+        return;
+      }
+
+      if (parsed?.type === "file-meta") {
+        const {
+          fileId,
+          name,
+          mimeType,
+          size,
+          totalChunks,
+        }: {
+          fileId?: string;
+          name?: string;
+          mimeType?: string;
+          size?: number;
+          totalChunks?: number;
+        } = parsed;
+
+        if (!fileId || !name || !totalChunks) {
+          setStatus("Invalid file metadata received.");
+          return;
+        }
+
+        incomingFilesRef.current[fileId] = {
+          name,
+          mimeType: mimeType ?? "application/octet-stream",
+          size: size ?? 0,
+          totalChunks,
+          chunks: new Array(totalChunks),
+          receivedChunks: 0,
+        };
+
+        appendLog(`Receiving file: ${name} (${Math.round((size ?? 0) / 1024)} KB)`);
+        return;
+      }
+
+      if (parsed?.type === "file-chunk") {
+        const {
+          fileId,
+          index,
+          data,
+        }: {
+          fileId?: string;
+          index?: number;
+          data?: string;
+        } = parsed;
+
+        if (!fileId || typeof index !== "number" || typeof data !== "string") {
+          return;
+        }
+
+        const fileState = incomingFilesRef.current[fileId];
+        if (!fileState || index < 0 || index >= fileState.totalChunks) {
+          return;
+        }
+
+        if (!fileState.chunks[index]) {
+          fileState.receivedChunks += 1;
+        }
+        fileState.chunks[index] = data;
+
+        if (fileState.receivedChunks % 25 === 0) {
+          setStatus(
+            `Receiving ${fileState.name}: ${fileState.receivedChunks}/${fileState.totalChunks}`,
+          );
+        }
+        return;
+      }
+
+      if (parsed?.type === "file-end") {
+        const fileId = parsed.fileId as string | undefined;
+        if (!fileId) return;
+
+        try {
+          await saveIncomingFile(fileId);
+        } catch (error) {
+          setStatus(`Failed to save incoming file: ${String(error)}`);
+        }
+      }
+    },
+    [appendLog, saveIncomingFile],
+  );
+
+  const stopLocalAudio = useCallback(() => {
+    try {
+      localStreamRef.current?.getTracks()?.forEach((track: any) => track.stop());
+    } catch {
+      // no-op
+    }
+    localStreamRef.current = null;
+    setAudioStatus("Mic stopped");
   }, []);
 
   const destroyConnection = useCallback(() => {
@@ -54,15 +217,42 @@ export default function App() {
     try {
       channelRef.current?.close();
       pcRef.current?.close();
+      stopLocalAudio();
     } catch {
       // no-op
     }
+    incomingFilesRef.current = {};
     channelRef.current = null;
     pcRef.current = null;
     setStatus("Idle");
-  }, []);
+  }, [stopLocalAudio]);
 
   useEffect(() => destroyConnection, [destroyConnection]);
+
+  const ensureLocalAudioStream = useCallback(async () => {
+    if (localStreamRef.current) {
+      return localStreamRef.current;
+    }
+
+    if (Platform.OS === "android") {
+      const permission = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      );
+      if (permission !== PermissionsAndroid.RESULTS.GRANTED) {
+        throw new Error("Microphone permission denied.");
+      }
+    }
+
+    // Audio-only capture keeps this demo focused on talking + file transfer.
+    const localStream = await mediaDevices.getUserMedia({
+      audio: true,
+      video: false,
+    });
+
+    localStreamRef.current = localStream;
+    setAudioStatus("Mic active");
+    return localStream;
+  }, []);
 
   const attachDataChannelHandlers = useCallback(
     (channel: any) => {
@@ -70,12 +260,14 @@ export default function App() {
       channelRef.current = channel;
       channel.onopen = () => setStatus("Connected");
       channel.onclose = () => setStatus("Channel Closed");
-      channel.onmessage = (event: any) => appendLog(`Peer: ${String(event.data)}`);
+      channel.onmessage = (event: any) => {
+        void handleChannelMessage(String(event.data));
+      };
     },
-    [appendLog],
+    [handleChannelMessage],
   );
 
-  const createPeerConnection = useCallback(() => {
+  const createPeerConnection = useCallback(async () => {
     destroyConnection();
 
     // Use `any` because react-native-webrtc typings miss some event handlers
@@ -89,17 +281,27 @@ export default function App() {
       attachDataChannelHandlers(event.channel);
       appendLog("Data channel received");
     };
+    pc.ontrack = (event: any) => {
+      if (event.track?.kind === "audio") {
+        setAudioStatus("Remote audio track connected");
+      }
+    };
+
+    const localStream = await ensureLocalAudioStream();
+    localStream.getTracks().forEach((track: any) => {
+      pc.addTrack(track, localStream);
+    });
 
     pcRef.current = pc;
     return pc;
-  }, [appendLog, attachDataChannelHandlers, destroyConnection]);
+  }, [appendLog, attachDataChannelHandlers, destroyConnection, ensureLocalAudioStream]);
 
   const createOffer = useCallback(async () => {
     try {
       setStatus("Creating offer...");
-      const pc = createPeerConnection();
+      const pc = await createPeerConnection();
       // Offer side proactively creates the data channel.
-      const channel = pc.createDataChannel("p2p-chat");
+      const channel = pc.createDataChannel("p2p-chat-files");
       attachDataChannelHandlers(channel);
 
       // Generate and set local SDP, then wait for ICE candidate gathering.
@@ -131,7 +333,7 @@ export default function App() {
         return;
       }
 
-      const pc = createPeerConnection();
+      const pc = await createPeerConnection();
       // Apply remote offer, then produce the answer.
       await pc.setRemoteDescription(parsed.sdp);
 
@@ -174,16 +376,87 @@ export default function App() {
       return;
     }
     if (!outgoingMessage.trim()) return;
-    channelRef.current.send(outgoingMessage);
-    appendLog(`Me: ${outgoingMessage}`);
+
+    channelRef.current.send(
+      JSON.stringify({ type: "chat", text: outgoingMessage.trim() }),
+    );
+    appendLog(`Me: ${outgoingMessage.trim()}`);
     setOutgoingMessage("");
   }, [appendLog, outgoingMessage]);
+
+  const pickAndSendFile = useCallback(async () => {
+    try {
+      if (!channelRef.current || channelRef.current.readyState !== "open") {
+        setStatus("Connect first before sending a file.");
+        return;
+      }
+
+      const picked = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+
+      if (picked.canceled || !picked.assets.length) {
+        setStatus("File selection canceled.");
+        return;
+      }
+
+      const asset = picked.assets[0];
+      setStatus(`Reading ${asset.name}...`);
+
+      // Base64 is easy to move over JSON in a cross-platform demo.
+      const fileBase64 = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      const totalChunks = Math.ceil(fileBase64.length / FILE_CHUNK_SIZE);
+      const fileId = `file-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+      channelRef.current.send(
+        JSON.stringify({
+          type: "file-meta",
+          fileId,
+          name: asset.name,
+          mimeType: asset.mimeType ?? "application/octet-stream",
+          size: asset.size ?? 0,
+          totalChunks,
+        }),
+      );
+
+      for (let index = 0; index < totalChunks; index += 1) {
+        const start = index * FILE_CHUNK_SIZE;
+        const end = start + FILE_CHUNK_SIZE;
+        const data = fileBase64.slice(start, end);
+
+        await waitForDataChannelDrain(channelRef.current);
+        channelRef.current.send(
+          JSON.stringify({
+            type: "file-chunk",
+            fileId,
+            index,
+            data,
+          }),
+        );
+
+        if ((index + 1) % 25 === 0 || index + 1 === totalChunks) {
+          setStatus(`Sending ${asset.name}: ${index + 1}/${totalChunks}`);
+        }
+      }
+
+      channelRef.current.send(JSON.stringify({ type: "file-end", fileId }));
+      appendLog(`Me sent file: ${asset.name}`);
+      setStatus(`File sent: ${asset.name}`);
+    } catch (error) {
+      setStatus(`File send failed: ${String(error)}`);
+    }
+  }, [appendLog]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>React Native P2P WebRTC</Text>
         <Text style={styles.status}>{status}</Text>
+        <Text style={styles.audioStatus}>{audioStatus}</Text>
 
         <View style={styles.buttons}>
           <Button title="1) Create Offer" onPress={createOffer} />
@@ -210,7 +483,7 @@ export default function App() {
           placeholder="Paste peer offer/answer JSON here..."
         />
 
-        <Text style={styles.label}>P2P Chat</Text>
+        <Text style={styles.label}>P2P Chat + File Transfer</Text>
         <View style={styles.row}>
           <TextInput
             style={styles.messageInput}
@@ -220,6 +493,8 @@ export default function App() {
           />
           <Button title="Send" onPress={sendMessage} />
         </View>
+
+        <Button title="Pick and Send File" onPress={pickAndSendFile} />
 
         <View style={styles.logBox}>
           {chatLog.length === 0 ? (
@@ -235,8 +510,8 @@ export default function App() {
 
         <Text style={styles.note}>
           {/* Signaling is done manually in this prototype. */}
-          This demo uses manual signaling. For production, replace copy/paste
-          with a signaling channel (WebSocket/Firebase/etc.).
+          This demo uses manual signaling and local file save paths. Keep test files
+          small while prototyping because base64 chunk transfer is memory heavy.
         </Text>
       </ScrollView>
       <StatusBar style="dark" />
@@ -248,7 +523,8 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#f5f7fb" },
   content: { padding: 16, gap: 12 },
   title: { fontSize: 22, fontWeight: "700", color: "#101828" },
-  status: { fontSize: 14, color: "#344054", marginBottom: 8 },
+  status: { fontSize: 14, color: "#344054" },
+  audioStatus: { fontSize: 13, color: "#475467", marginBottom: 8 },
   buttons: { gap: 8 },
   label: { fontSize: 14, fontWeight: "600", color: "#101828" },
   payloadInput: {
@@ -276,7 +552,7 @@ const styles = StyleSheet.create({
     borderColor: "#d0d5dd",
     borderRadius: 10,
     backgroundColor: "white",
-    minHeight: 120,
+    minHeight: 140,
     padding: 10,
     gap: 4,
   },
