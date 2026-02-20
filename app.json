@@ -31,7 +31,6 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
-    "plugins": ["react-native-webrtc"],
     "web": {
       "favicon": "./assets/favicon.png"
     }
