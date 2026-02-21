@@ -453,16 +453,42 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>React Native P2P WebRTC</Text>
-        <Text style={styles.status}>{status}</Text>
-        <Text style={styles.audioStatus}>{audioStatus}</Text>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.title} accessibilityRole="header">
+          React Native P2P WebRTC
+        </Text>
+        <Text style={styles.status} accessibilityLiveRegion="polite">
+          {status}
+        </Text>
+        <Text style={styles.audioStatus} accessibilityLiveRegion="polite">
+          {audioStatus}
+        </Text>
 
         <View style={styles.buttons}>
-          <Button title="1) Create Offer" onPress={createOffer} />
-          <Button title="2) Create Answer" onPress={createAnswer} />
-          <Button title="3) Apply Answer" onPress={applyRemoteAnswer} />
-          <Button title="Reset" onPress={destroyConnection} color="#B00020" />
+          <Button
+            title="1) Create Offer"
+            onPress={createOffer}
+            accessibilityLabel="Create offer"
+          />
+          <Button
+            title="2) Create Answer"
+            onPress={createAnswer}
+            accessibilityLabel="Create answer"
+          />
+          <Button
+            title="3) Apply Answer"
+            onPress={applyRemoteAnswer}
+            accessibilityLabel="Apply answer"
+          />
+          <Button
+            title="Reset"
+            onPress={destroyConnection}
+            color="#B00020"
+            accessibilityLabel="Reset connection"
+          />
         </View>
 
         <Text style={styles.label}>Local Payload (share this)</Text>
@@ -472,6 +498,10 @@ export default function App() {
           value={localPayload}
           editable={false}
           placeholder="Your offer/answer JSON will appear here..."
+          placeholderTextColor="#667085"
+          accessibilityLabel="Local payload"
+          accessibilityHint="Read-only JSON payload to share with your peer"
+          accessibilityState={{ disabled: true }}
         />
 
         <Text style={styles.label}>Remote Payload (paste peer JSON)</Text>
@@ -481,6 +511,9 @@ export default function App() {
           value={remotePayload}
           onChangeText={setRemotePayload}
           placeholder="Paste peer offer/answer JSON here..."
+          placeholderTextColor="#667085"
+          accessibilityLabel="Remote payload"
+          accessibilityHint="Paste your peer offer or answer JSON"
         />
 
         <Text style={styles.label}>P2P Chat + File Transfer</Text>
@@ -490,13 +523,30 @@ export default function App() {
             value={outgoingMessage}
             onChangeText={setOutgoingMessage}
             placeholder="Type a message..."
+            placeholderTextColor="#667085"
+            accessibilityLabel="Chat message"
+            accessibilityHint="Type a chat message to send to your peer"
+            returnKeyType="send"
+            onSubmitEditing={sendMessage}
           />
-          <Button title="Send" onPress={sendMessage} />
+          <Button
+            title="Send"
+            onPress={sendMessage}
+            accessibilityLabel="Send message"
+          />
         </View>
 
-        <Button title="Pick and Send File" onPress={pickAndSendFile} />
+        <Button
+          title="Pick and Send File"
+          onPress={pickAndSendFile}
+          accessibilityLabel="Pick and send file"
+        />
 
-        <View style={styles.logBox}>
+        <View
+          style={styles.logBox}
+          accessibilityRole="summary"
+          accessibilityLabel="Chat and transfer activity log"
+        >
           {chatLog.length === 0 ? (
             <Text style={styles.logLine}>No messages yet.</Text>
           ) : (
