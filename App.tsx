@@ -48,6 +48,7 @@ function waitForIceGatheringComplete(pc: any): Promise<void> {
 }
 
 async function waitForDataChannelDrain(channel: any): Promise<void> {
+  // Backpressure loop: pause sends until buffered data drops under threshold.
   while (channel.bufferedAmount > MAX_BUFFERED_AMOUNT) {
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
@@ -92,6 +93,7 @@ export default function App() {
 
       const safeName = fileState.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const outputUri = `${basePath}${Date.now()}-${safeName}`;
+      // Reassemble base64 payload in original chunk order before saving.
       const combinedBase64 = fileState.chunks.join("");
 
       await FileSystem.writeAsStringAsync(outputUri, combinedBase64, {
@@ -146,6 +148,7 @@ export default function App() {
           name,
           mimeType: mimeType ?? "application/octet-stream",
           size: size ?? 0,
+          // Pre-size array so chunks can be inserted by index out of order.
           totalChunks,
           chunks: new Array(totalChunks),
           receivedChunks: 0,
@@ -193,6 +196,7 @@ export default function App() {
         if (!fileId) return;
 
         try {
+          // Finalize write only after sender explicitly marks transfer complete.
           await saveIncomingFile(fileId);
         } catch (error) {
           setStatus(`Failed to save incoming file: ${String(error)}`);
@@ -410,6 +414,7 @@ export default function App() {
       });
 
       const totalChunks = Math.ceil(fileBase64.length / FILE_CHUNK_SIZE);
+      // Time + random suffix is enough for demo-level unique transfer IDs.
       const fileId = `file-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
       channelRef.current.send(
@@ -428,6 +433,7 @@ export default function App() {
         const end = start + FILE_CHUNK_SIZE;
         const data = fileBase64.slice(start, end);
 
+        // Guard against RTCDataChannel buffer growth on slower links/devices.
         await waitForDataChannelDrain(channelRef.current);
         channelRef.current.send(
           JSON.stringify({

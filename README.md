@@ -8,6 +8,8 @@ This project is a React Native (Expo) app that lets two devices on the same netw
 
 Signaling is manual in this prototype (copy/paste JSON offer/answer).
 
+> Explanatory note: this repo intentionally uses manual signaling so the WebRTC handshake is visible while learning.
+
 ## What this demo is for
 
 1. Hobby/testing on same Wi-Fi.
@@ -23,6 +25,8 @@ Signaling is manual in this prototype (copy/paste JSON offer/answer).
    3. `file-chunk`
    4. `file-end`
 4. Received files are written to app storage using `expo-file-system`.
+
+> Explanatory note: all transfer messages are JSON for simplicity and cross-platform consistency.
 
 ## Dependencies
 
