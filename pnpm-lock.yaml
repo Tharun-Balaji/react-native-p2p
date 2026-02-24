@@ -42,6 +42,9 @@ importers:
       '@types/react':
         specifier: ~19.1.0
         version: 19.1.17
+      babel-plugin-react-compiler:
+        specifier: ^1.0.0
+        version: 1.0.0
       typescript:
         specifier: ~5.9.2
         version: 5.9.3
