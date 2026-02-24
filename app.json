@@ -4,6 +4,9 @@
     "slug": "react-native-p2p",
     "version": "1.0.0",
     "jsEngine": "hermes",
+    "experiments": {
+      "reactCompiler": true
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
