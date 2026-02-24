@@ -2,6 +2,7 @@
   "expo": {
     "name": "react-native-p2p",
     "slug": "react-native-p2p",
+    "scheme": "reactnativep2p",
     "version": "1.0.0",
     "jsEngine": "hermes",
     "experiments": {
