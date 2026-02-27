@@ -35,6 +35,20 @@ This document captures architectural decisions, rationale, and changes as we ite
 - This is a hobby project, so scale is not a concern right now.
 - Architecture should leave room to scale in the future.
 
+### Proposed Flow (QR-Based Peer Discovery)
+- On first app open, ask for an optional display name.
+- Generate a collision-resistant UUID for the user; this becomes the stable network identity.
+- If no name is provided, generate one automatically; the name is then fixed.
+- Encode a QR code containing the user identity payload for sharing.
+- User A shows QR; User B scans and opens a dedicated peer screen for that ID.
+- Subsequent encounters re-open the same peer thread based on the stable ID.
+- Chat history is stored locally (AsyncStorage or IndexedDB) and is clearable.
+
+### Open Questions to Decide
+- Should the QR payload contain only the UUID, or UUID + name?
+- Should the QR include current connection hints (e.g., known IPs) or just identity?
+- Should users be allowed to change their display name later?
+
 ### Next Actions
 - Add architectural decisions and rationale here as they are made.
 - Keep updates concise and tied to concrete changes in the repo.
