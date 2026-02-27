@@ -30,6 +30,11 @@ This document captures architectural decisions, rationale, and changes as we ite
 - Decide acceptable signaling approach (manual vs. user-provided vs. minimal hosted).
 - Define target reliability constraints (LAN-only vs. internet-wide).
 
+### Decision Update
+- Third-party free STUN servers are acceptable for IP discovery.
+- This is a hobby project, so scale is not a concern right now.
+- Architecture should leave room to scale in the future.
+
 ### Next Actions
 - Add architectural decisions and rationale here as they are made.
 - Keep updates concise and tied to concrete changes in the repo.
