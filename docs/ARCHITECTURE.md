@@ -49,6 +49,11 @@ This document captures architectural decisions, rationale, and changes as we ite
 - Should the QR include current connection hints (e.g., known IPs) or just identity?
 - Should users be allowed to change their display name later?
 
+### Decision Update
+- Users can change their display name later.
+- QR payload should contain UUID only (no name).
+- QR should include connection hints to help peers connect.
+
 ### Next Actions
 - Add architectural decisions and rationale here as they are made.
 - Keep updates concise and tied to concrete changes in the repo.
