@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { RTCPeerConnection, RTCView, mediaDevices } from "react-native-webrtc";
+import { describePacket, extractConnectionHints, isExpired, makeId, nowIso, sanitizeDisplayName } from "./src/p2pCore";
 
 const rtcConfig = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -175,22 +176,10 @@ const EMPTY_DATA: AppData = {
   transfers: [],
 };
 
-function nowIso(): string {
-  return new Date().toISOString();
-}
-
-function makeId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
-}
-
-function getStateFileUri(): string | null {
-  const basePath = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
-  return basePath ? `${basePath}${STATE_FILE}` : null;
-}
-
 async function loadAppData(): Promise<AppData> {
-  const uri = getStateFileUri();
-  if (!uri) return EMPTY_DATA;
+  const basePath = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
+  if (!basePath) return EMPTY_DATA;
+  const uri = `${basePath}${STATE_FILE}`;
 
   try {
     const info = await FileSystem.getInfoAsync(uri);
@@ -210,58 +199,9 @@ async function loadAppData(): Promise<AppData> {
 }
 
 async function saveAppData(data: AppData): Promise<void> {
-  const uri = getStateFileUri();
-  if (!uri) return;
-  await FileSystem.writeAsStringAsync(uri, JSON.stringify(data, null, 2));
-}
-
-function sanitizeDisplayName(name: string): string {
-  const trimmed = name.trim();
-  return trimmed || "Local User";
-}
-
-function isExpired(isoTimestamp: string): boolean {
-  return Date.parse(isoTimestamp) < Date.now();
-}
-
-function extractConnectionHints(sdpText?: string, route?: "lan" | "direct-wan"): ConnectionHints {
-  if (!sdpText) {
-    return {
-      ...EMPTY_HINTS,
-      lastSuccessfulRoute: route,
-      updatedAt: nowIso(),
-    };
-  }
-
-  const candidates = sdpText
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith("a=candidate:"))
-    .slice(0, 12);
-  let publicEndpoint: string | undefined;
-
-  for (const line of candidates) {
-    if (line.includes(" typ srflx ")) {
-      const parts = line.split(" ");
-      if (parts.length >= 6) {
-        publicEndpoint = `${parts[4]}:${parts[5]}`;
-        break;
-      }
-    }
-  }
-
-  return {
-    lanIps: [],
-    publicEndpoint,
-    lastSuccessfulRoute: route,
-    iceCandidates: candidates,
-    updatedAt: nowIso(),
-  };
-}
-
-function describePacket(packet: RemoteSharePacket): string {
-  return packet.bootstrapSession.descriptionType === "offer"
-    ? `${packet.displayName} is requesting a ${packet.bootstrapSession.mediaMode} session.`
-    : `${packet.displayName} sent a ${packet.bootstrapSession.descriptionType} packet.`;
+  const basePath = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
+  if (!basePath) return;
+  await FileSystem.writeAsStringAsync(`${basePath}${STATE_FILE}`, JSON.stringify(data, null, 2));
 }
 
 async function waitForIceGatheringComplete(pc: any): Promise<void> {
