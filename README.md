@@ -10,6 +10,15 @@ Signaling is manual in this prototype (copy/paste JSON offer/answer).
 
 > Explanatory note: this repo intentionally uses manual signaling so the WebRTC handshake is visible while learning.
 
+## Planned v1 design docs
+
+The current app remains a prototype with manual signaling, but the target product direction is documented here:
+
+1. `docs/P2P_CLIENT_DESIGN.md`
+2. `docs/P2P_CLIENT_SPEC.md`
+
+These docs define a direct-only P2P client where chat, calls, and file transfers stay peer-to-peer, all durable data stays on-device, and public STUN is used only for address discovery and ICE candidate gathering.
+
 ## What this demo is for
 
 1. Hobby/testing on same Wi-Fi.
